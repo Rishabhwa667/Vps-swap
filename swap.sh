@@ -1,77 +1,79 @@
 #!/bin/bash
 
-set -e
-SCRIPT_VERSION="V 0.1"
+# Swap File Path
+SWAP_FILE="/swapfile"
 
-clear
-echo
-echo "**********************************************"
-echo "* Swap File Creation Script @ $SCRIPT_VERSION *"
-echo "* Project by ArialNodes Development          *"
-echo "**********************************************"
-echo
-echo "1. 128 MB SWAP"
-echo "2. 256 MB SWAP"
-echo "3. 512 MB SWAP"
-echo "4. 1 GB SWAP"
-echo "5. 2 GB SWAP"
-echo "6. 4 GB SWAP"
-echo "7. 8 GB SWAP"
-echo "8. 16 GB SWAP"
-echo "9. 32 GB SWAP"
-echo "10. 64 GB SWAP"
-echo "11. 128 GB SWAP"
-echo "12. 256 GB SWAP"
-echo "13. Close / Cancel"
-echo
-read -p "Please enter a number (1-13): " choice
-
-# Define swap size options
-declare -A swap_sizes=(
-    ["1"]="128M"
-    ["2"]="256M"
-    ["3"]="512M"
-    ["4"]="1G"
-    ["5"]="2G"
-    ["6"]="4G"
-    ["7"]="8G"
-    ["8"]="16G"
-    ["9"]="32G"
-    ["10"]="64G"
-    ["11"]="128G"
-    ["12"]="256G"
-)
-
-# Function to create swap
-create_swap() {
-    local SIZE=$1
-    echo "Creating $SIZE swap file..."
-    
-    # Remove existing swap
-    sudo swapoff -a
-    sudo rm -f /swapfile
-
-    # Create and enable new swap
-    sudo fallocate -l "$SIZE" /swapfile
-    sudo chmod 600 /swapfile
-    sudo mkswap /swapfile
-    sudo swapon /swapfile
-
-    # Make swap permanent
-    sudo cp /etc/fstab /etc/fstab.bak
-    echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab > /dev/null
-
-    echo "Swap of $SIZE successfully created and enabled!"
-    cat /proc/sys/vm/swappiness
+# Function to display options
+display_menu() {
+    echo "Select Swap Size:"
+    echo "1) 128MB"
+    echo "2) 256MB"
+    echo "3) 512MB"
+    echo "4) 1GB"
+    echo "5) 2GB"
+    echo "6) 4GB"
+    echo "7) 8GB"
+    echo "8) 16GB"
+    echo "9) 32GB"
+    echo "10) 64GB"
+    echo "0) Exit"
 }
 
-# Process user input
-if [[ $choice =~ ^[1-12]$ ]]; then
-    create_swap "${swap_sizes[$choice]}"
-elif [[ $choice == "13" ]]; then
-    echo "Canceling..."
-    exit 0
-else
-    echo "Invalid input. Please enter a number between 1 and 13."
-    exit 1
+# Get user choice
+while true; do
+    display_menu
+    read -p "Enter choice (0-10): " choice
+
+    case $choice in
+        1) SWAP_SIZE_MB=128 ;;
+        2) SWAP_SIZE_MB=256 ;;
+        3) SWAP_SIZE_MB=512 ;;
+        4) SWAP_SIZE_MB=1024 ;;
+        5) SWAP_SIZE_MB=2048 ;;
+        6) SWAP_SIZE_MB=4096 ;;
+        7) SWAP_SIZE_MB=8192 ;;
+        8) SWAP_SIZE_MB=16384 ;;
+        9) SWAP_SIZE_MB=32768 ;;
+        10) SWAP_SIZE_MB=65536 ;;
+        0) echo "Exiting..."; exit 0 ;;
+        *) echo "Invalid choice, please enter a valid option."; continue ;;
+    esac
+    break
+done
+
+# Check if swap already exists
+if sudo swapon --show | grep -q "$SWAP_FILE"; then
+    echo "Swap file already exists. Removing existing swap..."
+    sudo swapoff $SWAP_FILE
+    sudo rm -f $SWAP_FILE
 fi
+
+echo "Creating a ${SWAP_SIZE_MB}MB swap file..."
+
+# Create swap file
+if ! sudo fallocate -l ${SWAP_SIZE_MB}M $SWAP_FILE; then
+    echo "fallocate failed, using dd instead..."
+    sudo dd if=/dev/zero of=$SWAP_FILE bs=1M count=$SWAP_SIZE_MB status=progress
+fi
+
+# Set correct permissions
+sudo chmod 600 $SWAP_FILE
+
+# Format as swap
+sudo mkswap $SWAP_FILE
+
+# Enable swap
+sudo swapon $SWAP_FILE
+
+# Make it persistent
+if ! grep -q "$SWAP_FILE" /etc/fstab; then
+    echo "$SWAP_FILE none swap sw 0 0" | sudo tee -a /etc/fstab
+fi
+
+# Optimize swap usage
+echo "vm.swappiness=10" | sudo tee /etc/sysctl.d/99-swap.conf
+echo "vm.vfs_cache_pressure=50" | sudo tee -a /etc/sysctl.d/99-swap.conf
+sudo sysctl --system
+
+echo "Swap setup complete! By ArialNodes Team!"
+free -h
